@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Roblox DJ – DDJ-SB2</title>
+    <style>
+        body { background:#111; color:#fff; font-family:Arial; text-align:center; }
+        .deck { display:inline-block; width:45%; margin:10px; padding:10px; border:1px solid #444; }
+        .fader { width:80%; }
+        .vu { width:20px; height:150px; background:#333; margin:10px auto; position:relative; }
+        .vu-fill { position:absolute; bottom:0; width:100%; background:#0f0; }
+        .label { margin-top:5px; font-size:14px; }
+    </style>
+</head>
+<body>
+    <h1>Roblox DJ – Pioneer DDJ-SB2</h1>
+    <p id="status">Connexion MIDI…</p>
+
+    <div class="deck" id="deck1">
+        <h2>Deck 1</h2>
+        <div class="vu"><div class="vu-fill" id="vu1"></div></div>
+        <div class="label">Volume</div>
+        <input type="range" min="0" max="127" value="100" class="fader" id="fader1">
+        <div class="label">BPM: <span id="bpm1">0</span></div>
+        <div class="label">Piste: <span id="track1">–</span></div>
+    </div>
+
+    <div class="deck" id="deck2">
+        <h2>Deck 2</h2>
+        <div class="vu"><div class="vu-fill" id="vu2"></div></div>
+        <div class="label">Volume</div>
+        <input type="range" min="0" max="127" value="100" class="fader" id="fader2">
+        <div class="label">BPM: <span id="bpm2">0</span></div>
+        <div class="label">Piste: <span id="track2">–</span></div>
+    </div>
+
+    <script>
+        const API_URL = "https://TON-RENDER-APP.onrender.com/dj"; // à adapter
+
+        const statusEl = document.getElementById("status");
+        const vu1 = document.getElementById("vu1");
+        const vu2 = document.getElementById("vu2");
+        const fader1 = document.getElementById("fader1");
+        const fader2 = document.getElementById("fader2");
+
+        function sendCommand(payload) {
+            fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            }).catch(() => {});
+        }
+
+        // Faders virtuels → envoient aussi au backend
+        fader1.addEventListener("input", () => {
+            sendCommand({ type:"cc", cc:7, value: Number(fader1.value) });
+        });
+        fader2.addEventListener("input", () => {
+            sendCommand({ type:"cc", cc:11, value: Number(fader2.value) });
+        });
+
+        // WebMIDI
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess().then(midi => {
+                statusEl.textContent = "MIDI détecté. Branche ta DDJ-SB2.";
+                midi.inputs.forEach(input => {
+                    input.onmidimessage = msg => {
+                        const [status, data1, data2] = msg.data;
+
+                        // VU approximatif : on mappe les volumes
+                        if (data1 === 7) vu1.style.height = (data2 / 127 * 100) + "%";
+                        if (data1 === 11) vu2.style.height = (data2 / 127 * 100) + "%";
+
+                        sendCommand({ status, data1, data2 });
+                    };
+                });
+            }).catch(() => {
+                statusEl.textContent = "Erreur MIDI (navigateur ou permissions).";
+            });
+        } else {
+            statusEl.textContent = "WebMIDI non supporté dans ce navigateur.";
+        }
+    </script>
+</body>
+</html>
