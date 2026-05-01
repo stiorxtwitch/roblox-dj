@@ -5,43 +5,63 @@
     <title>Roblox DJ – DDJ-SB2</title>
     <style>
         body { background:#111; color:#fff; font-family:Arial; text-align:center; }
-        .deck { display:inline-block; width:45%; margin:10px; padding:10px; border:1px solid #444; }
+        .container { display:flex; justify-content:space-around; margin-top:20px; }
+        .deck, .playlist { border:1px solid #444; padding:10px; width:30%; background:#181818; }
         .fader { width:80%; }
         .vu { width:20px; height:150px; background:#333; margin:10px auto; position:relative; }
         .vu-fill { position:absolute; bottom:0; width:100%; background:#0f0; }
         .label { margin-top:5px; font-size:14px; }
+        ul { list-style:none; padding:0; max-height:200px; overflow-y:auto; text-align:left; }
+        li { padding:4px 8px; cursor:pointer; }
+        li.selected { background:#444; }
     </style>
 </head>
 <body>
-    <h1>Roblox DJ – Pioneer DDJ-SB2</h1>
+    <h1>Roblox DJ – DDJ-SB2</h1>
     <p id="status">Connexion MIDI…</p>
 
-    <div class="deck" id="deck1">
-        <h2>Deck 1</h2>
-        <div class="vu"><div class="vu-fill" id="vu1"></div></div>
-        <div class="label">Volume</div>
-        <input type="range" min="0" max="127" value="100" class="fader" id="fader1">
-        <div class="label">BPM: <span id="bpm1">0</span></div>
-        <div class="label">Piste: <span id="track1">–</span></div>
-    </div>
+    <div class="container">
+        <div class="deck" id="deck1">
+            <h2>Deck 1</h2>
+            <div class="vu"><div class="vu-fill" id="vu1"></div></div>
+            <div class="label">Volume</div>
+            <input type="range" min="0" max="127" value="100" class="fader" id="fader1">
+            <div class="label">BPM: <span id="bpm1">0</span></div>
+            <div class="label">Piste: <span id="track1">–</span></div>
+        </div>
 
-    <div class="deck" id="deck2">
-        <h2>Deck 2</h2>
-        <div class="vu"><div class="vu-fill" id="vu2"></div></div>
-        <div class="label">Volume</div>
-        <input type="range" min="0" max="127" value="100" class="fader" id="fader2">
-        <div class="label">BPM: <span id="bpm2">0</span></div>
-        <div class="label">Piste: <span id="track2">–</span></div>
+        <div class="playlist">
+            <h2>Playlist</h2>
+            <ul id="playlist"></ul>
+            <div class="label">Sélection: <span id="currentTrack">–</span></div>
+        </div>
+
+        <div class="deck" id="deck2">
+            <h2>Deck 2</h2>
+            <div class="vu"><div class="vu-fill" id="vu2"></div></div>
+            <div class="label">Volume</div>
+            <input type="range" min="0" max="127" value="100" class="fader" id="fader2">
+            <div class="label">BPM: <span id="bpm2">0</span></div>
+            <div class="label">Piste: <span id="track2">–</span></div>
+        </div>
     </div>
 
     <script>
-        const API_URL = "https://roblox-dj.onrender.com"; // à adapter
+        const API_URL = "https://TON-RENDER-APP.onrender.com/dj"; // à adapter
+        const PLAYLIST_URL = "https://TON-GITHUB-PAGES/playlist.json"; // à adapter
 
         const statusEl = document.getElementById("status");
         const vu1 = document.getElementById("vu1");
         const vu2 = document.getElementById("vu2");
         const fader1 = document.getElementById("fader1");
         const fader2 = document.getElementById("fader2");
+        const playlistEl = document.getElementById("playlist");
+        const currentTrackEl = document.getElementById("currentTrack");
+        const track1El = document.getElementById("track1");
+        const track2El = document.getElementById("track2");
+
+        let playlist = [];
+        let selectedIndex = 0;
 
         function sendCommand(payload) {
             fetch(API_URL, {
@@ -51,12 +71,43 @@
             }).catch(() => {});
         }
 
-        // Faders virtuels → envoient aussi au backend
+        function renderPlaylist() {
+            playlistEl.innerHTML = "";
+            playlist.forEach((t, i) => {
+                const li = document.createElement("li");
+                li.textContent = t.title + " (" + t.id + ")";
+                if (i === selectedIndex) li.classList.add("selected");
+                li.onclick = () => {
+                    selectedIndex = i;
+                    updateSelection();
+                };
+                playlistEl.appendChild(li);
+            });
+            updateSelection();
+        }
+
+        function updateSelection() {
+            const items = playlistEl.querySelectorAll("li");
+            items.forEach((li, i) => {
+                li.classList.toggle("selected", i === selectedIndex);
+            });
+            if (playlist[selectedIndex]) {
+                currentTrackEl.textContent = playlist[selectedIndex].title;
+            } else {
+                currentTrackEl.textContent = "–";
+            }
+        }
+
+        // Faders virtuels
         fader1.addEventListener("input", () => {
-            sendCommand({ type:"cc", cc:7, value: Number(fader1.value) });
+            const v = Number(fader1.value);
+            vu1.style.height = (v / 127 * 100) + "%";
+            sendCommand({ type:"cc", cc:7, value:v });
         });
         fader2.addEventListener("input", () => {
-            sendCommand({ type:"cc", cc:11, value: Number(fader2.value) });
+            const v = Number(fader2.value);
+            vu2.style.height = (v / 127 * 100) + "%";
+            sendCommand({ type:"cc", cc:11, value:v });
         });
 
         // WebMIDI
@@ -67,10 +118,45 @@
                     input.onmidimessage = msg => {
                         const [status, data1, data2] = msg.data;
 
-                        // VU approximatif : on mappe les volumes
-                        if (data1 === 7) vu1.style.height = (data2 / 127 * 100) + "%";
-                        if (data1 === 11) vu2.style.height = (data2 / 127 * 100) + "%";
+                        // CC 7 / 11 / 8 : volumes + crossfader
+                        if (data1 === 7) {
+                            vu1.style.height = (data2 / 127 * 100) + "%";
+                        }
+                        if (data1 === 11) {
+                            vu2.style.height = (data2 / 127 * 100) + "%";
+                        }
 
+                        // Navigation playlist (ex: CC 40/41)
+                        if (data1 === 40 && data2 > 0) { // down
+                            if (selectedIndex < playlist.length - 1) selectedIndex++;
+                            updateSelection();
+                            sendCommand({ type:"nav", dir:"down" });
+                        }
+                        if (data1 === 41 && data2 > 0) { // up
+                            if (selectedIndex > 0) selectedIndex--;
+                            updateSelection();
+                            sendCommand({ type:"nav", dir:"up" });
+                        }
+
+                        // LOAD G (Note 46) → Deck 1
+                        if (data1 === 46 && data2 > 0) {
+                            const track = playlist[selectedIndex];
+                            if (track) {
+                                track1El.textContent = track.title;
+                                sendCommand({ type:"load", deck:1, track });
+                            }
+                        }
+
+                        // LOAD D (Note 47) → Deck 2
+                        if (data1 === 47 && data2 > 0) {
+                            const track = playlist[selectedIndex];
+                            if (track) {
+                                track2El.textContent = track.title;
+                                sendCommand({ type:"load", deck:2, track });
+                            }
+                        }
+
+                        // Envoi brut pour Roblox (si besoin)
                         sendCommand({ status, data1, data2 });
                     };
                 });
@@ -80,6 +166,18 @@
         } else {
             statusEl.textContent = "WebMIDI non supporté dans ce navigateur.";
         }
+
+        // Charger la playlist
+        fetch(PLAYLIST_URL)
+            .then(r => r.json())
+            .then(data => {
+                playlist = data.tracks || [];
+                selectedIndex = 0;
+                renderPlaylist();
+            })
+            .catch(() => {
+                currentTrackEl.textContent = "Erreur playlist";
+            });
     </script>
 </body>
 </html>
